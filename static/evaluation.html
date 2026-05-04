@@ -1,0 +1,969 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Evaluation — Federated RAG System</title>
+  <meta name="description" content="IR evaluation dashboard — NDCG@10, Recall@10, Precision@5 with interactive charts."/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d0f17;
+      --surface: #13161f;
+      --surface2: #1a1e2d;
+      --border: #232840;
+      --border2: #2e3454;
+      --text-primary: #e8ecf7;
+      --text-secondary: #a0aac8;
+      --text-muted: #6b7599;
+      --text-faint: #424b6a;
+      --blue: #4f8ef7;
+      --blue-glow: rgba(79,142,247,0.18);
+      --blue-mid: #2563eb;
+      --blue-light: rgba(79,142,247,0.1);
+      --green: #34d88c;
+      --green-glow: rgba(52,216,140,0.15);
+      --green-light: rgba(52,216,140,0.08);
+      --amber: #f59e0b;
+      --amber-light: rgba(245,158,11,0.1);
+      --red: #f87171;
+      --red-light: rgba(248,113,113,0.1);
+      --purple: #a78bfa;
+      --purple-light: rgba(167,139,250,0.1);
+      --cyan: #22d3ee;
+      --pink: #f472b6;
+      --font-sans: "Inter", system-ui, sans-serif;
+      --font-mono: "JetBrains Mono", monospace;
+      --radius-sm: 6px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+      --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 20px rgba(0,0,0,0.5);
+      --shadow-glow: 0 0 24px rgba(79,142,247,0.12);
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      min-height: 100%; background: var(--bg);
+      color: var(--text-primary); font-family: var(--font-sans);
+      font-size: 15px; line-height: 1.5; -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      height: 56px; display: flex; align-items: center; padding: 0 28px;
+      background: rgba(13,15,23,0.85); backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border);
+      gap: 16px; position: sticky; top: 0; z-index: 100;
+      box-shadow: 0 2px 24px rgba(0,0,0,0.4);
+    }
+    .header-logo {
+      font-size: 1rem; font-weight: 700; color: var(--text-primary);
+      letter-spacing: -0.02em;
+    }
+    .header-logo span { color: var(--blue); }
+    .header-nav { display: flex; gap: 6px; margin-left: 4px; }
+    .nav-link {
+      font-size: 0.75rem; padding: 5px 14px; border-radius: 20px;
+      border: 1px solid var(--border); color: var(--text-muted);
+      text-decoration: none; transition: all 0.15s ease;
+    }
+    .nav-link:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+    .nav-link.active { background: var(--blue); color: white; border-color: var(--blue); box-shadow: 0 0 12px rgba(79,142,247,0.3); }
+
+    /* ── MAIN ── */
+    .main { max-width: 1200px; margin: 0 auto; padding: 32px 24px 80px; }
+
+    .page-title {
+      font-size: 1.6rem; font-weight: 700; color: var(--text-primary);
+      margin-bottom: 4px; letter-spacing: -0.03em;
+    }
+    .page-sub {
+      font-size: 0.78rem; color: var(--text-muted);
+      font-family: var(--font-mono); margin-bottom: 28px;
+    }
+
+    /* ── DATASET SELECTOR ── */
+    .ds-selector { margin-bottom: 24px; }
+    .ds-label-head { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+    .ds-cards { display: flex; gap: 12px; flex-wrap: wrap; }
+    .ds-card {
+      display: flex; align-items: flex-start; gap: 12px;
+      background: var(--surface); border: 1.5px solid var(--border);
+      border-radius: var(--radius-md); padding: 16px 20px;
+      cursor: pointer; flex: 1; min-width: 230px; transition: all 0.2s;
+    }
+    .ds-card:hover { border-color: var(--blue); background: var(--blue-light); }
+    .ds-card.selected { border-color: var(--blue); background: var(--blue-glow); box-shadow: 0 0 16px rgba(79,142,247,0.15); }
+    .ds-card-title { font-weight: 600; color: var(--text-primary); font-size: 0.9rem; }
+    .ds-card-badge {
+      font-size: 0.65rem; color: var(--blue); font-family: var(--font-mono);
+      background: var(--blue-light); padding: 2px 7px; border-radius: 4px; margin-left: 6px;
+    }
+    .ds-card-sub { font-size: 0.72rem; color: var(--text-muted); margin-top: 3px; }
+    .ds-card-warn { font-size: 0.65rem; color: var(--text-faint); font-family: var(--font-mono); margin-top: 3px; }
+
+    /* ── RUN CONTROLS ── */
+    .run-section { display: flex; gap: 10px; align-items: center; margin-bottom: 24px; flex-wrap: wrap; }
+    .btn {
+      padding: 10px 22px; border-radius: var(--radius-md); border: none;
+      font-family: var(--font-sans); font-size: 0.84rem; font-weight: 600;
+      cursor: pointer; transition: all 0.15s ease; display: flex; align-items: center; gap: 8px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--blue-mid), #3b82f6);
+      color: white; box-shadow: 0 2px 12px rgba(79,142,247,0.35);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 4px 20px rgba(79,142,247,0.5); }
+    .btn-primary:disabled { background: var(--surface2); color: var(--text-faint); cursor: not-allowed; box-shadow: none; transform: none; }
+    .btn-secondary {
+      background: var(--surface); color: var(--text-secondary);
+      border: 1px solid var(--border2);
+    }
+    .btn-secondary:hover { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+    .toggle-label {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.76rem; color: var(--text-secondary);
+      cursor: pointer; user-select: none;
+    }
+    .toggle-label input { accent-color: var(--blue); width: 14px; height: 14px; }
+    .toggle-sub { font-size: 0.65rem; color: var(--text-faint); font-family: var(--font-mono); }
+    .run-status {
+      font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-muted);
+      padding: 6px 14px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: 20px; margin-left: auto;
+    }
+
+    /* ── PROGRESS ── */
+    .progress-wrap { margin-bottom: 24px; display: none; }
+    .progress-wrap.show { display: block; }
+    .progress-label { font-size: 0.72rem; font-family: var(--font-mono); color: var(--text-muted); margin-bottom: 6px; }
+    .progress-track { height: 5px; background: var(--border); border-radius: 6px; overflow: hidden; }
+    .progress-fill {
+      height: 100%; border-radius: 6px; width: 0%;
+      background: linear-gradient(90deg, var(--blue-mid), var(--cyan));
+      transition: width 0.3s ease;
+      box-shadow: 0 0 8px rgba(79,142,247,0.5);
+    }
+    .progress-query { font-size: 0.66rem; font-family: var(--font-mono); color: var(--text-faint); margin-top: 5px; }
+
+    /* ── SECTION HEADER ── */
+    .section-header {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 14px; margin-top: 32px;
+    }
+    .section-title { font-size: 0.95rem; font-weight: 600; color: var(--text-primary); letter-spacing: -0.01em; }
+    .section-badge {
+      font-size: 0.62rem; font-family: var(--font-mono); padding: 2px 9px;
+      border-radius: 20px; background: var(--blue-light); border: 1px solid var(--border2); color: var(--blue);
+    }
+
+    /* ── METRIC CARDS ── */
+    .metrics-row { display: flex; gap: 12px; margin-bottom: 24px; flex-wrap: wrap; }
+    .metric-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-md); padding: 18px 20px;
+      box-shadow: var(--shadow-sm); flex: 1; min-width: 130px;
+      transition: all 0.2s; position: relative; overflow: hidden;
+    }
+    .metric-card::before {
+      content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, var(--blue-mid), var(--cyan));
+      opacity: 0; transition: opacity 0.2s;
+    }
+    .metric-card:hover::before { opacity: 1; }
+    .metric-card:hover { border-color: var(--border2); box-shadow: var(--shadow-glow); }
+    .metric-label { font-size: 0.62rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .metric-value {
+      font-size: 1.9rem; font-weight: 700; font-family: var(--font-mono);
+      color: var(--blue); line-height: 1; margin-bottom: 3px;
+    }
+    .metric-value.empty { color: var(--text-faint); font-size: 1.5rem; }
+    .metric-desc { font-size: 0.58rem; color: var(--text-faint); font-family: var(--font-mono); }
+
+    /* group headings */
+    .metrics-group-label {
+      font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-faint);
+      margin-bottom: 8px; margin-top: 20px;
+    }
+    .metrics-group-label:first-child { margin-top: 0; }
+
+    /* ── CHARTS GRID ── */
+    .charts-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-lg); padding: 20px 20px 16px;
+      box-shadow: var(--shadow-md); display: flex; flex-direction: column; gap: 12px;
+    }
+    .chart-card.wide { grid-column: 1 / -1; }
+    .chart-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2px; }
+    .btn-download {
+      background: transparent; border: none; font-size: 1.1rem; cursor: pointer;
+      color: var(--text-faint); transition: color 0.2s; padding: 0; line-height: 1; margin-top: -2px;
+    }
+    .btn-download:hover { color: var(--blue); }
+    .chart-title {
+      font-size: 0.82rem; font-weight: 600; color: var(--text-secondary);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .chart-title::before {
+      content: ''; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--blue); display: inline-block;
+    }
+    .chart-sub { font-size: 0.65rem; color: var(--text-faint); font-family: var(--font-mono); margin-top: 2px; margin-left: 14px; }
+    canvas { max-height: 240px; background-color: var(--surface); }
+
+    /* ── ABLATION TABLE ── */
+    .table-wrap {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius-md); overflow: hidden;
+      box-shadow: var(--shadow-sm); margin-bottom: 24px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 10px 14px; font-size: 0.67rem; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.07em;
+      color: var(--text-muted); background: var(--surface2);
+      border-bottom: 1px solid var(--border); text-align: left;
+    }
+    thead th:not(:first-child) { text-align: center; }
+    tbody td {
+      padding: 11px 14px; font-size: 0.8rem; color: var(--text-secondary);
+      border-bottom: 1px solid var(--border); font-family: var(--font-mono);
+    }
+    tbody td:first-child { font-family: var(--font-sans); font-weight: 500; color: var(--text-primary); }
+    tbody td:not(:first-child) { text-align: center; }
+    tbody tr:last-child td { border-bottom: none; }
+    tbody tr:hover { background: var(--surface2); }
+    tbody tr.best-row { background: var(--green-light); }
+    tbody tr.best-row td:first-child::after { content: " ★"; color: var(--green); font-size: 0.7rem; }
+
+    .score-pill {
+      display: inline-block; padding: 2px 8px; border-radius: 20px;
+      font-size: 0.7rem; font-weight: 600; font-family: var(--font-mono);
+    }
+    .score-high { background: var(--green-light); color: var(--green); border: 1px solid rgba(52,216,140,0.25); }
+    .score-mid  { background: var(--amber-light); color: var(--amber); border: 1px solid rgba(245,158,11,0.25); }
+    .score-low  { background: var(--red-light);   color: var(--red);   border: 1px solid rgba(248,113,113,0.25); }
+    .score-empty{ background: var(--surface2);     color: var(--text-faint); border: 1px solid var(--border); }
+
+    /* ── PER-QUERY TABLE ── */
+    .per-query-table tbody td { font-size: 0.72rem; padding: 8px 14px; }
+    .query-text { font-family: var(--font-sans); font-size: 0.75rem; color: var(--text-primary); max-width: 240px; }
+
+    /* ── EMPTY STATE ── */
+    .empty-eval {
+      text-align: center; padding: 56px 24px;
+      color: var(--text-faint); font-size: 0.8rem; font-family: var(--font-mono);
+    }
+    .empty-eval .icon { font-size: 2.8rem; margin-bottom: 14px; }
+
+    /* ── SPINNER ── */
+    .spinner-sm {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: white;
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* glow pulse for active evaluation */
+    @keyframes glow-pulse {
+      0%, 100% { box-shadow: 0 0 0 rgba(79,142,247,0); }
+      50% { box-shadow: 0 0 20px rgba(79,142,247,0.25); }
+    }
+    .running-glow { animation: glow-pulse 2s ease-in-out infinite; }
+
+    /* fade-in for chart sections */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(16px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .fade-up { animation: fadeUp 0.4s ease forwards; }
+    .charts-section { display: none; }
+    .charts-section.visible { display: block; }
+  </style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<div class="header">
+  <div class="header-logo">Federated <span>RAG</span></div>
+  <div class="header-nav">
+    <a href="/" class="nav-link">← Search</a>
+    <a href="/evaluation" class="nav-link active">Evaluation</a>
+  </div>
+</div>
+
+<!-- ── MAIN ── -->
+<div class="main">
+  <div class="page-title">System Evaluation</div>
+  <div class="page-sub">IR metrics · NDCG@10 · Recall@10 · Precision@5</div>
+
+  <!-- Dataset selector -->
+  <div class="ds-selector">
+    <div class="ds-label-head">📊 Evaluation Dataset</div>
+    <div class="ds-cards">
+      <label id="ds-label-covid" class="ds-card selected">
+        <input type="radio" name="dataset" id="ds-trec-covid" value="trec-covid" checked style="accent-color:var(--blue);margin-top:3px;"/>
+        <div>
+          <div class="ds-card-title">TREC-COVID <span class="ds-card-badge">Default</span></div>
+          <div class="ds-card-sub">Your active 1,000-doc COVID corpus · Official TREC qrels</div>
+        </div>
+      </label>
+      <label id="ds-label-scifact" class="ds-card">
+        <input type="radio" name="dataset" id="ds-scifact" value="scifact" style="accent-color:var(--blue);margin-top:3px;"/>
+        <div>
+          <div class="ds-card-title">SciFact <span class="ds-card-badge" style="color:var(--purple);background:var(--purple-light);">Benchmark</span></div>
+          <div class="ds-card-sub">5,183 scientific docs · High-precision gold-standard benchmark</div>
+          <div class="ds-card-warn">⚠ First run indexes corpus (~30s)</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Run controls -->
+  <div class="run-section">
+    <button class="btn btn-primary" id="btn-run-full" onclick="runEvaluation('full')">
+      <span>▶ Run Full Evaluation</span>
+    </button>
+    <button class="btn btn-secondary" id="btn-run-ablation" onclick="runEvaluation('ablation')">
+      ⊞ Run Ablation Study
+    </button>
+    <button class="btn btn-secondary" onclick="runEvaluation('both')">
+      ◈ Run Both
+    </button>
+    <label class="toggle-label" title="Skip CrossEncoder reranker — much faster on CPU">
+      <input type="checkbox" id="fast-mode-toggle" checked/>
+      Fast mode <span class="toggle-sub">(skip reranker)</span>
+    </label>
+    <label class="toggle-label" title="Use HyDE expansion (requires Ollama, slower)">
+      <input type="checkbox" id="hyde-toggle" style="accent-color:var(--purple);"/>
+      HyDE expansion <span class="toggle-sub">(LLM per query)</span>
+    </label>
+    <label class="toggle-label" title="Include zero-result queries (strict academic mode)">
+      <input type="checkbox" id="strict-mode-toggle" style="accent-color:var(--amber);"/>
+      Strict metrics <span class="toggle-sub">(include zeros)</span>
+    </label>
+    <div class="run-status" id="run-status">Ready — click to evaluate</div>
+  </div>
+
+  <!-- Progress bar -->
+  <div class="progress-wrap" id="progress-wrap">
+    <div class="progress-label" id="progress-label">Running evaluation...</div>
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="progress-query" id="progress-query">Initializing...</div>
+  </div>
+
+  <!-- ── AGGREGATE METRIC CARDS ── -->
+  <div class="section-header" style="margin-top:28px;">
+    <div class="section-title">Aggregate Metrics</div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <div class="section-badge" id="query-count-badge">— queries scored</div>
+      <div class="section-badge" id="query-skipped-badge" style="display:none;background:var(--amber-light);color:var(--amber);border-color:rgba(245,158,11,0.25);">— skipped</div>
+    </div>
+  </div>
+  <div id="qrels-source-note" style="font-size:0.7rem;color:var(--text-muted);font-family:var(--font-mono);margin-bottom:8px;display:none;">
+    📋 Qrels source: <span id="qrels-source-val">—</span>
+  </div>
+  <div style="font-size:0.67rem;color:var(--text-faint);font-family:var(--font-mono);margin-bottom:14px;">
+    P@5 uses adjusted denominator min(5, #relevant) — a perfect system scores 1.0 regardless of corpus size.
+  </div>
+
+  <!-- ── 3 HERO METRIC CARDS ── -->
+  <div class="metrics-row" id="metrics-hero" style="gap:20px;">
+    <div class="metric-card" style="flex:1;border-color:#2563eb;box-shadow:0 0 24px rgba(79,142,247,0.18);">
+      <div class="metric-label" style="color:var(--blue);">NDCG@10</div>
+      <div class="metric-value empty" id="m-ndcg" style="font-size:2.6rem;">—</div>
+      <div class="metric-desc">Normalised Discounted Cumulative Gain at rank 10 · Primary ranking metric</div>
+    </div>
+    <div class="metric-card" style="flex:1;border-color:#0d9488;box-shadow:0 0 24px rgba(52,216,140,0.15);">
+      <div class="metric-label" style="color:var(--green);">Recall@10</div>
+      <div class="metric-value empty" id="m-r10" style="font-size:2.6rem;">—</div>
+      <div class="metric-desc">Fraction of all relevant documents found in the top 10 results</div>
+    </div>
+    <div class="metric-card" style="flex:1;border-color:#7c3aed;box-shadow:0 0 24px rgba(167,139,250,0.15);">
+      <div class="metric-label" style="color:var(--purple);">Precision@5</div>
+      <div class="metric-value empty" id="m-p5" style="font-size:2.6rem;">—</div>
+      <div class="metric-desc">Fraction of top-5 results that are relevant · Adjusted denominator min(5,#rel)</div>
+    </div>
+  </div>
+
+  <!-- ── 2 SECONDARY METRIC CARDS (MAP + MRR) ── -->
+  <div class="metrics-group-label" style="margin-top:20px;">Ranking Quality</div>
+  <div class="metrics-row" id="metrics-secondary" style="gap:16px;">
+    <div class="metric-card" style="flex:1;">
+      <div class="metric-label">MAP</div>
+      <div class="metric-value empty" id="m-map">—</div>
+      <div class="metric-desc">Mean Average Precision · Precision averaged over all relevant positions</div>
+    </div>
+    <div class="metric-card" style="flex:1;">
+      <div class="metric-label">MRR</div>
+      <div class="metric-value empty" id="m-mrr">—</div>
+      <div class="metric-desc">Mean Reciprocal Rank · Reciprocal rank of the first relevant document</div>
+    </div>
+    <div class="metric-card" style="flex:1;opacity:0;pointer-events:none;"></div>
+  </div>
+
+  <!-- ── CHARTS SECTION ── -->
+  <div class="charts-section" id="charts-section">
+    <div class="section-header">
+      <div class="section-title">Performance Charts</div>
+      <div class="section-badge">Interactive visualisations</div>
+    </div>
+
+    <div class="charts-grid fade-up">
+      <!-- Chart 1: Three-metric grouped bar (wide) -->
+      <div class="chart-card wide">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Core Metrics Overview</div>
+            <div class="chart-sub">NDCG@10 · Recall@10 · Precision@5 — side-by-side comparison</div>
+          </div>
+          <button class="btn-download" title="Download graph as JPG" onclick="downloadChart('chart-metrics-bar', 'core_metrics.jpg')">⤓</button>
+        </div>
+        <canvas id="chart-metrics-bar" style="max-height:220px;"></canvas>
+      </div>
+
+      <!-- Chart 2: NDCG@10 per-query distribution -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">NDCG@10 Distribution</div>
+            <div class="chart-sub">Per-query score histogram — how often the system ranks well</div>
+          </div>
+          <button class="btn-download" title="Download graph as JPG" onclick="downloadChart('chart-ndcg-dist', 'ndcg_distribution.jpg')">⤓</button>
+        </div>
+        <canvas id="chart-ndcg-dist"></canvas>
+      </div>
+
+      <!-- Chart 3: Recall@10 per-query distribution -->
+      <div class="chart-card">
+        <div class="chart-header">
+          <div>
+            <div class="chart-title">Recall@10 Distribution</div>
+            <div class="chart-sub">Per-query recall histogram — coverage of relevant documents</div>
+          </div>
+          <button class="btn-download" title="Download graph as JPG" onclick="downloadChart('chart-recall-dist', 'recall_distribution.jpg')">⤓</button>
+        </div>
+        <canvas id="chart-recall-dist"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ABLATION SECTION ── -->
+  <div class="section-header">
+    <div class="section-title">Ablation Study</div>
+    <div class="section-badge">Component contribution analysis</div>
+  </div>
+  <div class="table-wrap" id="ablation-wrap">
+    <div class="empty-eval">
+      <div class="icon">⊞</div>
+      Click "Run Ablation Study" to compare system configurations
+    </div>
+  </div>
+
+  <!-- Ablation grouped bar chart -->
+  <div class="charts-section" id="ablation-chart-section">
+    <div class="chart-card wide fade-up">
+      <div class="chart-header">
+        <div>
+          <div class="chart-title">Ablation — NDCG@10 · Recall@10 · Precision@5 by Configuration</div>
+          <div class="chart-sub">Grouped metric comparison across retrieval configurations</div>
+        </div>
+        <button class="btn-download" title="Download graph as JPG" onclick="downloadChart('chart-ablation', 'ablation_metrics.jpg')">⤓</button>
+      </div>
+      <canvas id="chart-ablation" style="max-height:280px;"></canvas>
+    </div>
+  </div>
+
+  <!-- ── PER-QUERY TABLE ── -->
+  <div class="section-header" style="margin-top:32px;">
+    <div class="section-title">Per-Query Results</div>
+    <div class="section-badge" id="per-query-badge">— queries</div>
+  </div>
+  <div class="table-wrap" id="per-query-wrap">
+    <div class="empty-eval">
+      <div class="icon">📋</div>
+      Click "Run Full Evaluation" to see per-query breakdown
+    </div>
+  </div>
+
+</div><!-- /main -->
+
+<script>
+/* ════════════════════════════════════════════
+   CHART INSTANCES
+════════════════════════════════════════════ */
+let chartMetricsBar = null;
+let chartNdcgDist   = null;
+let chartRecallDist = null;
+let chartAblation   = null;
+let isRunning       = false;
+
+/* ── Default Chart.js theme ── */
+Chart.defaults.color = '#6b7599';
+Chart.defaults.borderColor = '#232840';
+Chart.defaults.font.family = '"JetBrains Mono", monospace';
+Chart.defaults.font.size = 11;
+
+const BLUE   = '#4f8ef7';
+const CYAN   = '#22d3ee';
+const GREEN  = '#34d88c';
+const PURPLE = '#a78bfa';
+const AMBER  = '#f59e0b';
+const PINK   = '#f472b6';
+
+/* ── Dataset card highlight ── */
+document.querySelectorAll('input[name="dataset"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    document.getElementById('ds-label-covid').classList.toggle('selected', document.getElementById('ds-trec-covid').checked);
+    document.getElementById('ds-label-scifact').classList.toggle('selected', document.getElementById('ds-scifact').checked);
+  });
+});
+
+/* ── Progress helpers ── */
+function setRunning(running) {
+  isRunning = running;
+  document.getElementById('btn-run-full').disabled = running;
+  document.getElementById('btn-run-ablation').disabled = running;
+  const pw = document.getElementById('progress-wrap');
+  if (running) { pw.classList.add('show'); pw.classList.add('running-glow'); }
+  else         { pw.classList.remove('show'); pw.classList.remove('running-glow'); }
+}
+function updateProgress(pct, label, query) {
+  document.getElementById('progress-fill').style.width = `${pct}%`;
+  document.getElementById('progress-label').textContent = label;
+  document.getElementById('progress-query').textContent = query || '';
+}
+function setStatus(msg) { document.getElementById('run-status').textContent = msg; }
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function scorePill(val) {
+  if (val === null || val === undefined || val === '—')
+    return `<span class="score-pill score-empty">—</span>`;
+  const n = parseFloat(val);
+  const cls = n >= 0.6 ? 'score-high' : n >= 0.3 ? 'score-mid' : 'score-low';
+  return `<span class="score-pill ${cls}">${n.toFixed(4)}</span>`;
+}
+
+/* ── Colour a metric value element ── */
+function colourValue(el, val) {
+  const n = parseFloat(val);
+  el.style.color = n >= 0.6 ? 'var(--green)' : n >= 0.3 ? 'var(--amber)' : 'var(--red)';
+  el.classList.remove('empty');
+}
+
+/* ── Render aggregate metric cards ── */
+function renderMetrics(metrics, numQueries, qrelsSource, skipped) {
+  const map = {
+    'ndcg@10': 'm-ndcg',
+    'r@10':    'm-r10',
+    'p@5':     'm-p5',
+    'map':     'm-map',
+    'mrr':     'm-mrr',
+  };
+  const colors = {
+    'ndcg@10': 'var(--blue)',
+    'r@10':    'var(--green)',
+    'p@5':     'var(--purple)',
+    'map':     'var(--amber)',
+    'mrr':     'var(--cyan)',
+  };
+  for (const [key, id] of Object.entries(map)) {
+    const el = document.getElementById(id);
+    if (!el) continue;
+    const val = metrics[key];
+    if (val !== undefined) {
+      el.textContent = val.toFixed(4);
+      el.style.color = colors[key];
+      el.classList.remove('empty');
+    }
+  }
+  document.getElementById('query-count-badge').textContent = `${numQueries} queries scored`;
+  if (skipped > 0) {
+    const sb = document.getElementById('query-skipped-badge');
+    sb.textContent = `${skipped} skipped`;
+    sb.style.display = 'inline-block';
+  }
+  if (qrelsSource) {
+    const note = document.getElementById('qrels-source-note');
+    document.getElementById('qrels-source-val').textContent = qrelsSource;
+    note.style.display = 'block';
+  }
+  renderCharts(metrics);
+}
+
+/* ════ CHART RENDERING ════ */
+
+const CHART_DEFAULTS = {
+  plugins: { legend: { labels: { boxWidth: 12, padding: 16 } } },
+  animation: { duration: 600, easing: 'easeOutQuart' },
+};
+
+function destroyChart(ref) {
+  if (ref) { try { ref.destroy(); } catch(_) {} }
+  return null;
+}
+
+/* Gradient helper */
+function mkGrad(ctx, top, bottom) {
+  const g = ctx.createLinearGradient(0, 0, 0, 200);
+  g.addColorStop(0, top);
+  g.addColorStop(1, bottom);
+  return g;
+}
+
+function renderCharts(metrics) {
+  document.getElementById('charts-section').classList.add('visible');
+
+  /* ── 1. Core Metrics grouped bar chart ── */
+  {
+    const ctx = document.getElementById('chart-metrics-bar').getContext('2d');
+    chartMetricsBar = destroyChart(chartMetricsBar);
+    chartMetricsBar = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: ['NDCG@10', 'Recall@10', 'Precision@5', 'MAP', 'MRR'],
+        datasets: [{
+          label: 'Score',
+          data: [
+            metrics['ndcg@10'] ?? 0,
+            metrics['r@10']    ?? 0,
+            metrics['p@5']     ?? 0,
+            metrics['map']     ?? 0,
+            metrics['mrr']     ?? 0,
+          ],
+          backgroundColor: [
+            'rgba(79,142,247,0.82)',
+            'rgba(52,216,140,0.82)',
+            'rgba(167,139,250,0.82)',
+            'rgba(245,158,11,0.82)',
+            'rgba(34,211,238,0.82)',
+          ],
+          borderColor: [BLUE, GREEN, PURPLE, AMBER, CYAN],
+          borderWidth: 1.5,
+          borderRadius: 8,
+          borderSkipped: false,
+        }],
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        indexAxis: 'x',
+        scales: {
+          y: {
+            min: 0, max: 1,
+            grid: { color: '#1a1e2d' },
+            ticks: { callback: v => v.toFixed(2) },
+          },
+          x: { grid: { color: 'transparent' } },
+        },
+        plugins: {
+          ...CHART_DEFAULTS.plugins,
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: ctx => ` ${ctx.parsed.y.toFixed(4)}`,
+            },
+          },
+        },
+        animation: { duration: 700, easing: 'easeOutBounce' },
+      },
+    });
+  }
+}
+
+/* ── Per-query distribution histograms ── */
+function _buildHistogram(values, color) {
+  const bins = [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+  const labels = bins.slice(0,-1).map((b,i) => `${b.toFixed(1)}–${bins[i+1].toFixed(1)}`);
+  const counts = new Array(bins.length - 1).fill(0);
+  for (const v of values) {
+    const idx = Math.min(Math.floor(v * 10), 9);
+    counts[idx]++;
+  }
+  const barColors = counts.map((_, i) => {
+    const norm = i / 10;
+    if (color === 'blue')
+      return norm >= 0.6 ? 'rgba(79,142,247,0.82)' : norm >= 0.3 ? 'rgba(79,142,247,0.5)' : 'rgba(79,142,247,0.25)';
+    return norm >= 0.6 ? 'rgba(52,216,140,0.82)' : norm >= 0.3 ? 'rgba(52,216,140,0.5)' : 'rgba(52,216,140,0.25)';
+  });
+  return { labels, counts, barColors };
+}
+
+function renderNdcgDistribution(perQuery) {
+  /* NDCG@10 histogram */
+  {
+    const { labels, counts, barColors } = _buildHistogram(perQuery.map(r => r['ndcg@10'] ?? 0), 'blue');
+    const ctx = document.getElementById('chart-ndcg-dist').getContext('2d');
+    chartNdcgDist = destroyChart(chartNdcgDist);
+    chartNdcgDist = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Queries',
+          data: counts,
+          backgroundColor: barColors,
+          borderColor: barColors.map(c => c.replace(/,[\d.]+\)$/, ',1)')),
+          borderWidth: 1, borderRadius: 4,
+        }],
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        scales: {
+          y: { grid: { color: '#1a1e2d' }, ticks: { stepSize: 1 } },
+          x: { grid: { color: '#1a1e2d' } },
+        },
+        plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } },
+      },
+    });
+  }
+
+  /* Recall@10 histogram */
+  {
+    const { labels, counts, barColors } = _buildHistogram(perQuery.map(r => r['r@10'] ?? 0), 'green');
+    const ctx = document.getElementById('chart-recall-dist').getContext('2d');
+    chartRecallDist = destroyChart(chartRecallDist);
+    chartRecallDist = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Queries',
+          data: counts,
+          backgroundColor: barColors,
+          borderColor: barColors.map(c => c.replace(/,[\d.]+\)$/, ',1)')),
+          borderWidth: 1, borderRadius: 4,
+        }],
+      },
+      options: {
+        ...CHART_DEFAULTS,
+        scales: {
+          y: { grid: { color: '#1a1e2d' }, ticks: { stepSize: 1 } },
+          x: { grid: { color: '#1a1e2d' } },
+        },
+        plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } },
+      },
+    });
+  }
+}
+
+/* ── Ablation grouped bar chart (NDCG@10, R@10, P@5, MAP, MRR) ── */
+function renderAblationChart(rows) {
+  document.getElementById('ablation-chart-section').classList.add('visible');
+  const ctx = document.getElementById('chart-ablation').getContext('2d');
+  chartAblation = destroyChart(chartAblation);
+  chartAblation = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.config),
+      datasets: [
+        {
+          label: 'NDCG@10',
+          data: rows.map(r => r['ndcg@10'] ?? 0),
+          backgroundColor: 'rgba(79,142,247,0.82)',
+          borderColor: BLUE, borderWidth: 1.5, borderRadius: 6,
+        },
+        {
+          label: 'Recall@10',
+          data: rows.map(r => r['r@10'] ?? 0),
+          backgroundColor: 'rgba(52,216,140,0.82)',
+          borderColor: GREEN, borderWidth: 1.5, borderRadius: 6,
+        },
+        {
+          label: 'Precision@5',
+          data: rows.map(r => r['p@5'] ?? 0),
+          backgroundColor: 'rgba(167,139,250,0.82)',
+          borderColor: PURPLE, borderWidth: 1.5, borderRadius: 6,
+        },
+        {
+          label: 'MAP',
+          data: rows.map(r => r['map'] ?? 0),
+          backgroundColor: 'rgba(245,158,11,0.82)',
+          borderColor: AMBER, borderWidth: 1.5, borderRadius: 6,
+        },
+        {
+          label: 'MRR',
+          data: rows.map(r => r['mrr'] ?? 0),
+          backgroundColor: 'rgba(34,211,238,0.82)',
+          borderColor: CYAN, borderWidth: 1.5, borderRadius: 6,
+        },
+      ],
+    },
+    options: {
+      ...CHART_DEFAULTS,
+      scales: {
+        y: { min: 0, max: 1, grid: { color: '#1a1e2d' }, ticks: { callback: v => v.toFixed(2) } },
+        x: { grid: { color: 'transparent' }, ticks: { maxRotation: 20, font: { size: 10 } } },
+      },
+      plugins: {
+        ...CHART_DEFAULTS.plugins,
+        legend: { labels: { boxWidth: 12, padding: 16 } },
+      },
+    },
+  });
+}
+
+/* ── Render ablation table ── */
+function renderAblation(rows) {
+  const best = rows.reduce((a, b) => a['ndcg@10'] >= b['ndcg@10'] ? a : b, rows[0]);
+  const thead = `
+    <thead><tr>
+      <th>Configuration</th>
+      <th>NDCG@10</th>
+      <th>Recall@10</th>
+      <th>Precision@5</th>
+      <th>MAP</th>
+      <th>MRR</th>
+    </tr></thead>`;
+  const tbody = rows.map(row => {
+    const isBest = row.config === best.config;
+    return `<tr class="${isBest ? 'best-row' : ''}">
+      <td>${row.config}</td>
+      <td>${scorePill(row['ndcg@10'])}</td>
+      <td>${scorePill(row['r@10'])}</td>
+      <td>${scorePill(row['p@5'])}</td>
+      <td>${scorePill(row['map'])}</td>
+      <td>${scorePill(row['mrr'])}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('ablation-wrap').innerHTML =
+    `<table>${thead}<tbody>${tbody}</tbody></table>`;
+  renderAblationChart(rows);
+}
+
+/* ── Render per-query table ── */
+function renderPerQuery(rows) {
+  document.getElementById('per-query-badge').textContent = `${rows.length} queries`;
+  const thead = `
+    <thead><tr>
+      <th>#</th><th>Query</th><th title="Relevant docs">#Rel</th>
+      <th>NDCG@10</th>
+      <th>Recall@10</th>
+      <th>Precision@5</th>
+      <th>MAP</th>
+      <th>MRR</th>
+    </tr></thead>`;
+  const tbody = rows.map((row, i) => `
+    <tr>
+      <td style="color:var(--text-faint);font-size:0.66rem">${i+1}</td>
+      <td class="query-text">${escHtml(row.query)}</td>
+      <td style="text-align:center;color:var(--text-muted)">${row.num_relevant ?? '—'}</td>
+      <td>${scorePill(row['ndcg@10'])}</td>
+      <td>${scorePill(row['r@10'])}</td>
+      <td>${scorePill(row['p@5'])}</td>
+      <td>${scorePill(row['map'])}</td>
+      <td>${scorePill(row['mrr'])}</td>
+    </tr>`).join('');
+  document.getElementById('per-query-wrap').innerHTML =
+    `<table class="per-query-table">${thead}<tbody>${tbody}</tbody></table>
+     <div style="font-size:0.65rem;color:var(--text-faint);font-family:var(--font-mono);padding:10px 14px;">* P@5 denominator = min(5, #relevant docs) so a perfect system always scores 1.0</div>`;
+  renderNdcgDistribution(rows);
+}
+
+/* ── Main evaluation runner ── */
+async function runEvaluation(mode) {
+  if (isRunning) return;
+  const fastMode   = document.getElementById('fast-mode-toggle').checked;
+  const useHyde    = document.getElementById('hyde-toggle').checked;
+  const strictMode = document.getElementById('strict-mode-toggle').checked;
+  const dataset    = document.querySelector('input[name="dataset"]:checked')?.value || 'trec-covid';
+
+  setRunning(true);
+  setStatus(`Starting${fastMode ? ' · fast' : ''}${useHyde ? ' · HyDE' : ''}...`);
+  updateProgress(0, 'Initializing...', '');
+
+  document.getElementById('per-query-wrap').innerHTML =
+    `<div class="empty-eval"><div class="icon">⏳</div>Evaluating queries…</div>`;
+
+  try {
+    const res = await fetch('/api/evaluate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode, fast_mode: fastMode, dataset, use_hyde: useHyde, strict_mode: strictMode }),
+    });
+    if (!res.ok) throw new Error(`Server error: ${res.status}`);
+
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+
+      const lines = buf.split('\n');
+      buf = lines.pop();
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        let evt;
+        try { evt = JSON.parse(line.slice(6)); } catch { continue; }
+
+        if (evt.type === 'progress') {
+          const pct     = evt.pct ?? 0;
+          const scored  = evt.scored ?? 0;
+          const skipped = evt.skipped ?? 0;
+          const q       = evt.query ?? '';
+          const skipTxt = skipped > 0 ? ` · ${skipped} skipped` : '';
+          const ndcgTxt = evt.live_ndcg !== undefined ? `  — NDCG@10 so far: ${evt.live_ndcg}` : '';
+          updateProgress(
+            pct,
+            `Query ${evt.done} / ${evt.total}${skipTxt}`,
+            `${evt.skipped ? '⬜ skipped — no relevant docs' : '✓ scored'}: "${q.length > 65 ? q.slice(0,65)+'…' : q}"${ndcgTxt}`
+          );
+          setStatus(`Running… ${evt.done}/${evt.total} (${scored} scored${skipTxt})`);
+
+        } else if (evt.type === 'done') {
+          if (evt.metrics) {
+            renderMetrics(evt.metrics, evt.num_queries, evt.qrels_source, evt.skipped);
+            if (evt.per_query) renderPerQuery(evt.per_query);
+            const skipNote = evt.skipped > 0 ? ` (${evt.skipped} skipped)` : '';
+            setStatus(`Done — ${evt.num_queries} queries${skipNote} · ${evt.qrels_source || ''}`);
+          }
+          if (evt.ablation) renderAblation(evt.ablation);
+          updateProgress(100, 'Evaluation complete ✓', '');
+
+        } else if (evt.type === 'error') {
+          throw new Error(evt.message || 'Unknown error');
+        }
+      }
+    }
+  } catch(err) {
+    setStatus(`Error: ${err.message}`);
+    updateProgress(0, 'Error', err.message);
+    console.error(err);
+  } finally {
+    setRunning(false);
+  }
+}
+
+/* ── Download Chart Helper ── */
+function downloadChart(canvasId, fileName) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  const targetCanvas = document.createElement('canvas');
+  targetCanvas.width = canvas.width;
+  targetCanvas.height = canvas.height;
+  const ctx = targetCanvas.getContext('2d');
+  ctx.fillStyle = '#0f1219'; 
+  ctx.fillRect(0, 0, targetCanvas.width, targetCanvas.height);
+  ctx.drawImage(canvas, 0, 0);
+  
+  const link = document.createElement('a');
+  link.href = targetCanvas.toDataURL('image/jpeg', 0.95);
+  link.download = fileName;
+  link.click();
+}
+</script>
+</body>
+</html>

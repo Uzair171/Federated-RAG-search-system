@@ -1,0 +1,17 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+.idea/
+.vscode/
+
+# Ignore databases and index caches created on first run
+chroma_db/
+chroma_db_v2/
+data/*.json
+data/*_cache/
+datasets/scifact/
+datasets/*.zip
+
+# Ignore environment variables
+.env
