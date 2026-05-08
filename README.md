@@ -11,7 +11,7 @@ This is a Privacy-Enhanced Federated RAG System. It's a Flask-based web applicat
 
 1. **Clone the repository** (if you haven't already):
    ```bash
-   git clone <your-repository-url>
+   git clone https://github.com/Uzair171/Federated-RAG-search-system.git
    cd privacy_rag_system
    ```
 
