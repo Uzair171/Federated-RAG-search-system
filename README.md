@@ -1,6 +1,6 @@
-# Privacy RAG System
+# Federated RAG System
 
-This is a Privacy-Enhanced Federated RAG System. It's a Flask-based web application and REST API server that uses local LLMs via Ollama to generate answers, ensuring no data leaves the machine.
+This is a Federated RAG System. It's a Flask-based web application and REST API server that uses local LLMs via Ollama to generate answers, ensuring no data leaves the machine.
 
 ## Prerequisites
 
